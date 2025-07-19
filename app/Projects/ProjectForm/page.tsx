@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import ProjectFormComponent from '@/app/components/ProjectForm'; 
+import ProjectForm from '@/app/components/ProjectForm'; 
 import { Project } from '@/lib/api'; 
 
 export default function ProjectFormPage() {
@@ -37,7 +37,7 @@ export default function ProjectFormPage() {
 
   return (
     <div className="container mx-auto p-4">
-      <ProjectFormComponent
+      <ProjectForm
         token={token}
         editingProject={editingProject} // Passer le projet à éditer si besoin
         onProjectCreated={handleProjectCreated}

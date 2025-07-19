@@ -88,7 +88,9 @@ export default function ProjectForm({
         onProjectUpdated(updatedProject);
         toast.success('Projet mis à jour avec succès !');
       } else {
-        const newProject = await createProject(formData, token);
+        // Assuming you have access to the ownerId from your application's context
+        const ownerId = 'your_owner_id'; // Replace with the actual ownerId
+        const newProject = await createProject({ ...formData, ownerId }, token);
         onProjectCreated(newProject);
         toast.success('Projet créé avec succès !');
       }
