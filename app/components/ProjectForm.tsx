@@ -24,7 +24,7 @@ interface ProjectFormProps {
   onCancelEditing: () => void;
 }
 
-export default function ProjectForm({
+export default function MyProjectForm({
   token,
   editingProject,
   onProjectCreated,

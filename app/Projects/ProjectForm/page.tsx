@@ -4,10 +4,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import ProjectForm from '@/app/components/ProjectForm'; 
+import MyProjectForm from '@/app/components/ProjectForm'; 
 import { Project } from '@/lib/api'; 
 
-export default function ProjectFormPage() {
+export default function ProjectForm() {
   const router = useRouter();
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   // Il faudrait idéalement récupérer le token d'authentification ici
@@ -37,7 +37,7 @@ export default function ProjectFormPage() {
 
   return (
     <div className="container mx-auto p-4">
-      <ProjectForm
+      <MyProjectForm
         token={token}
         editingProject={editingProject} // Passer le projet à éditer si besoin
         onProjectCreated={handleProjectCreated}
