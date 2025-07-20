@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { createProject, updateProject, Project } from '@/lib/api';
+import { createProject, updateProject, getProjectById, Project, CreateProjectData, UpdateProjectData } from '@/lib/api';
 import {
   Save,
   X,
@@ -16,41 +16,53 @@ import {
   FileText
 } from 'lucide-react';
 
-interface ProjectFormProps {
-  token: string | null;
-  editingProject?: Project | null;
-  onProjectCreated?: (project: Project) => void;
-  onProjectUpdated?: (project: Project) => void;
-  onCancelEditing?: () => void;
-}
-
-export default function ProjectForm({
-  token = null,
-  editingProject = null,
-  onProjectCreated = () => {},
-  onProjectUpdated = () => {},
-  onCancelEditing = () => {}
-}: ProjectFormProps) {
+// Le composant est maintenant enveloppé dans une fonction pour utiliser Suspense
+function ProjectFormPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get('id');
+
+  const [formData, setFormData] = useState<Omit<CreateProjectData, 'ownerId'>>({
     name: '',
     description: '',
-    status: 'EN_COURS' as Project['status'],
-    priority: 'MOYENNE' as Project['priority']
+    status: 'EN_COURS',
+    priority: 'MOYENNE'
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
-    if (editingProject) {
-      setFormData({
-        name: editingProject.name,
-        description: editingProject.description || '',
-        status: editingProject.status,
-        priority: editingProject.priority
-      });
-    }
-  }, [editingProject]);
+    const fetchProject = async () => {
+      if (projectId) {
+        setIsLoading(true);
+        const token = localStorage.getItem('token');
+        if (!token) {
+          toast.error("Session expirée. Veuillez vous reconnecter.");
+          router.push('/Login');
+          return;
+        }
+        try {
+          const project = await getProjectById(projectId, token);
+          setFormData({
+            name: project.name,
+            description: project.description || '',
+            status: project.status,
+            priority: project.priority
+          });
+        } catch (error: any) {
+          toast.error(error.message || "Erreur lors de la récupération du projet.");
+          router.push('/Projects');
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProject();
+  }, [projectId, router]);
 
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
@@ -73,33 +85,31 @@ export default function ProjectForm({
     e.preventDefault();
     
     if (!validateForm()) return;
-    
-    if (!token) {
-      toast.error('Token d\'authentification manquant.');
-      router.push('/login');
+
+    const token = localStorage.getItem('token');
+    const userString = localStorage.getItem('user');
+    const user = userString ? JSON.parse(userString) : null;
+
+    if (!token || !user?.id) {
+      toast.error('Session invalide. Veuillez vous reconnecter.');
+      router.push('/Login');
       return;
     }
 
     setIsSubmitting(true);
     
     try {
-      if (editingProject) {
-        const updatedProject = await updateProject(editingProject.id, formData, token);
-        onProjectUpdated(updatedProject);
+      if (projectId) {
+        const updatedData: UpdateProjectData = formData;
+        await updateProject(projectId, updatedData, token);
         toast.success('Projet mis à jour avec succès !');
       } else {
-        const newProject = await createProject({...formData, ownerId: 'someOwnerId' }, token);
-        onProjectCreated(newProject);
+        const projectData: CreateProjectData = { ...formData, ownerId: user.id };
+        await createProject(projectData, token);
         toast.success('Projet créé avec succès !');
       }
       
-      setFormData({
-        name: '',
-        description: '',
-        status: 'EN_COURS',
-        priority: 'MOYENNE'
-      });
-      setErrors({});
+      router.push('/Projects');
       
     } catch (err: any) {
       console.error('Erreur lors de la soumission:', err);
@@ -125,47 +135,40 @@ export default function ProjectForm({
   };
 
   const handleCancel = () => {
-    setFormData({
-      name: '',
-      description: '',
-      status: 'EN_COURS',
-      priority: 'MOYENNE'
-    });
-    setErrors({});
-    onCancelEditing();
+    router.push('/Projects');
   };
 
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case 'EN_COURS':
-        return 'En cours';
-      case 'EN_ATTENTE':
-        return 'En attente';
-      case 'TERMINE':
-        return 'Terminé';
-      default:
-        return status;
+      case 'EN_COURS': return 'En cours';
+      case 'EN_ATTENTE': return 'En attente';
+      case 'TERMINE': return 'Terminé';
+      default: return status;
     }
   };
 
   const getPriorityLabel = (priority: string) => {
     switch (priority) {
-      case 'BASSE':
-        return 'Basse';
-      case 'MOYENNE':
-        return 'Moyenne';
-      case 'HAUTE':
-        return 'Haute';
-      default:
-        return priority;
+      case 'BASSE': return 'Basse';
+      case 'MOYENNE': return 'Moyenne';
+      case 'HAUTE': return 'Haute';
+      default: return priority;
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-[#101060]" />
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 text-gray-800">
+    <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 text-gray-800 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center">
-          {editingProject ? (
+          {projectId ? (
             <>
               <Edit className="mr-3 text-[#101060]" />
               Modifier le projet
@@ -188,7 +191,6 @@ export default function ProjectForm({
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Nom du projet */}
           <div className="lg:col-span-2">
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
               <Target className="inline w-4 h-4 mr-1" />
@@ -215,7 +217,6 @@ export default function ProjectForm({
             )}
           </div>
 
-          {/* Statut */}
           <div>
             <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-2">
               <Flag className="inline w-4 h-4 mr-1" />
@@ -235,7 +236,6 @@ export default function ProjectForm({
             </select>
           </div>
 
-          {/* Priorité */}
           <div>
             <label htmlFor="priority" className="block text-sm font-medium text-gray-700 mb-2">
               <AlertCircle className="inline w-4 h-4 mr-1" />
@@ -256,7 +256,6 @@ export default function ProjectForm({
           </div>
         </div>
 
-        {/* Description */}
         <div>
           <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
             <FileText className="inline w-4 h-4 mr-1" />
@@ -288,7 +287,6 @@ export default function ProjectForm({
           </div>
         </div>
 
-        {/* Aperçu des données */}
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <h3 className="text-sm font-medium text-gray-700 mb-2">Aperçu :</h3>
           <div className="space-y-1 text-sm text-gray-600">
@@ -301,22 +299,21 @@ export default function ProjectForm({
           </div>
         </div>
 
-        {/* Boutons d'action */}
         <div className="flex flex-col sm:flex-row gap-3 pt-4">
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || isLoading}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-[#101060] text-white rounded-lg hover:bg-[#0c0c50] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>{editingProject ? 'Mise à jour...' : 'Création...'}</span>
+                <span>{projectId ? 'Mise à jour...' : 'Création...'}</span>
               </>
             ) : (
               <>
                 <Save className="w-5 h-5" />
-                <span>{editingProject ? 'Mettre à jour' : 'Créer le projet'}</span>
+                <span>{projectId ? 'Mettre à jour' : 'Créer le projet'}</span>
               </>
             )}
           </button>
@@ -333,5 +330,14 @@ export default function ProjectForm({
         </div>
       </form>
     </div>
+  );
+}
+
+// Exporter la page avec Suspense pour gérer le chargement des searchParams
+export default function ProjectFormPageWithSuspense() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-[#101060]" /></div>}>
+      <ProjectFormPage />
+    </Suspense>
   );
 }
