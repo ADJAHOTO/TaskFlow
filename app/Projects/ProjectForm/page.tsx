@@ -256,6 +256,7 @@ function ProjectFormPage() {
           </div>
         </div>
 
+        {/* Description */}
         <div>
           <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
             <FileText className="inline w-4 h-4 mr-1" />
@@ -264,7 +265,7 @@ function ProjectFormPage() {
           <textarea
             id="description"
             name="description"
-            value={formData.description}
+            value={formData.description || ''}
             onChange={handleInputChange}
             rows={4}
             className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all resize-none ${
@@ -282,11 +283,12 @@ function ProjectFormPage() {
               </p>
             )}
             <p className="text-sm text-gray-500 ml-auto">
-              {formData.description.length}/500 caractères
+              {(formData.description || '').length}/500 caractères
             </p>
           </div>
         </div>
 
+        {/* Aperçu des données */}
         <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <h3 className="text-sm font-medium text-gray-700 mb-2">Aperçu :</h3>
           <div className="space-y-1 text-sm text-gray-600">
@@ -294,11 +296,12 @@ function ProjectFormPage() {
             <p><strong>Statut :</strong> {getStatusLabel(formData.status)}</p>
             <p><strong>Priorité :</strong> {getPriorityLabel(formData.priority)}</p>
             {formData.description && (
-              <p><strong>Description :</strong> {formData.description.substring(0, 100)}{formData.description.length > 100 ? '...' : ''}</p>
+              <p><strong>Description :</strong> {(formData.description || '').substring(0, 100)}{(formData.description || '').length > 100 ? '...' : ''}</p>
             )}
           </div>
         </div>
 
+        {/* Boutons d'action */}
         <div className="flex flex-col sm:flex-row gap-3 pt-4">
           <button
             type="submit"

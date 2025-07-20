@@ -140,6 +140,15 @@ export async function getTasks(token: string): Promise<GetTasksResponse> {
   });
 }
 
+export async function getTaskById(taskId: string, token: string): Promise<Task> {
+  return apiFetcher<Task>(`/tasks/${taskId}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+}
+
 export async function createTask(taskData: CreateTaskData, token: string): Promise<Task> {
   return apiFetcher<Task>('/tasks', {
     method: 'POST',

@@ -1,261 +1,314 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { createTask, updateTask, Task, CreateTaskData, UpdateTaskData } from '@/lib/api';
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation'
+import { createTask, updateTask, getTaskById, CreateTaskData, UpdateTaskData } from '@/lib/api';
 import {
-  PlusCircle,
+  Save,
+  X,
   Loader2,
   Edit,
-  XCircle,
-  CalendarDays,
-  Tag,
-  AlertTriangle
+  PlusCircle,
+  AlertCircle,
+  Calendar,
+  Flag,
+  FileText
 } from 'lucide-react';
 
- 
+function TaskFormPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const taskId = searchParams.get('id');
 
-interface FormTaskProps {
-  token: string | null;
-  editingTask: Task | null;
-  onTaskCreated: (task: Task) => void;
-  onTaskUpdated: (task: Task) => void;
-  onCancelEditing: () => void;
-}
-
-export default function FormTask({
-  token,
-  editingTask,
-  onTaskCreated,
-  onTaskUpdated,
-  onCancelEditing
-}: FormTaskProps) {
-  const [newTaskTitle, setNewTaskTitle] = useState(editingTask?.title || '');
-  const [newTaskDescription, setNewTaskDescription] = useState(editingTask?.description || '');
-  const [newTaskStatus, setNewTaskStatus] = useState<'A_FAIRE' | 'EN_COURS' | 'EN_ATTENTE' | 'TERMINE' >(editingTask?.status || 'A_FAIRE');
-  const [newTaskDueDate, setNewTaskDueDate] = useState(editingTask?.dueDate?.split('T')[0] || '');
-  const [newTaskPriority, setNewTaskPriority] = useState<'FAIBLE' | 'MOYENNE' | 'ELEVEE'>(editingTask?.priority || 'FAIBLE');
-  const [isCreatingTask, setIsCreatingTask] = useState(false);
-  const [isUpdatingTask, setIsUpdatingTask] = useState(false);
-  const router = useRouter()
+  const [formData, setFormData] = useState<Omit<CreateTaskData, 'userId'>>({
+    title: '',
+    description: '',
+    status: 'A_FAIRE',
+    priority: 'MOYENNE',
+    dueDate: null
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
 
   useEffect(() => {
-    const userToken = localStorage.getItem('authToken');
-    if (!userToken) {
-      toast.error('Vous devez être connecté pour accéder à cette page.');
-      setTimeout(() => {
-        router.push('/Login')
-      }, 1500)
-      return;
+    const fetchTask = async () => {
+      if (taskId) {
+        setIsLoading(true);
+        const token = localStorage.getItem('token');
+        if (!token) {
+          toast.error("Session expirée. Veuillez vous reconnecter.");
+          router.push('/Login');
+          return;
+        }
+        try {
+          const task = await getTaskById(taskId, token);
+          setFormData({
+            title: task.title,
+            description: task.description || '',
+            status: task.status,
+            priority: task.priority,
+            dueDate: task.dueDate ? task.dueDate.split('T')[0] : null
+          });
+        } catch (error: any) {
+          toast.error(error.message || "Erreur lors de la récupération de la tâche.");
+          router.push('/Tasks');
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTask();
+  }, [taskId, router]);
+
+  const validateForm = () => {
+    const newErrors: {[key: string]: string} = {};
+    
+    if (!formData.title.trim()) {
+      newErrors.title = 'Le titre de la tâche est requis';
     }
-    // If you want to set the token in state, you need to add setToken to your state hooks.
-    // setToken(userToken);
-  }, [router]);
-  
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateForm()) return;
 
-    if (!newTaskTitle.trim()) {
-      toast.error('Le titre de la tâche ne peut pas être vide.');
+    const token = localStorage.getItem('token');
+    const userString = localStorage.getItem('user');
+    const user = userString ? JSON.parse(userString) : null;
+
+    if (!token || !user?.id) {
+      toast.error('Session invalide. Veuillez vous reconnecter.');
+      router.push('/Login');
       return;
     }
-    if (!token) {
-      toast.error('Token d\'authentification manquant. Veuillez vous reconnecter.');
-      return;
-    }
 
-    if (editingTask) {
-      await handleUpdateTask();
-    } else {
-      await handleCreateTask();
-    }
-  };
-
-  const handleCreateTask = async () => {
-    setIsCreatingTask(true);
-    try {
-      const taskData: CreateTaskData = {
-        title: newTaskTitle.trim(),
-        description: newTaskDescription.trim() || null,
-        status: 'A_FAIRE',
-        priority: newTaskPriority,
-        dueDate: newTaskDueDate ? new Date(newTaskDueDate).toISOString() : null,
-        userId: 'temp'
-      };
-
-      const createdTask = await createTask(taskData, token as string);
-      onTaskCreated(createdTask);
-      resetForm();
-      toast.success('Tâche ajoutée avec succès !');
-    } catch (err: any) {
-      console.error('Erreur lors de la création de la tâche :', err);
-      toast.error(err.message || 'Impossible d\'ajouter la tâche.');
-    } finally {
-      setIsCreatingTask(false);
-    }
-  };
-
-  const handleUpdateTask = async () => {
-    if (!editingTask) return;
-    setIsUpdatingTask(true);
+    setIsSubmitting(true);
     
     try {
-      const updatedData: UpdateTaskData = {
-        title: newTaskTitle.trim(),
-        description: newTaskDescription.trim() || null,
-        status: newTaskStatus,
-        priority: newTaskPriority,
-        dueDate: newTaskDueDate ? new Date(newTaskDueDate).toISOString() : null,
+      const dataPayload = {
+        ...formData,
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null
       };
 
-      const updatedTask = await updateTask(editingTask.id, updatedData, token as string);
-      onTaskUpdated(updatedTask);
-      resetForm();
-      toast.success('Tâche mise à jour avec succès !');
+      if (taskId) {
+        const updatedData: UpdateTaskData = dataPayload;
+        await updateTask(taskId, updatedData, token);
+        toast.success('Tâche mise à jour avec succès !');
+      } else {
+        const taskData: CreateTaskData = { ...dataPayload, userId: user.id };
+        await createTask(taskData, token);
+        toast.success('Tâche créée avec succès !');
+      }
+      
+      router.push('/Tasks');
+      
     } catch (err: any) {
-      console.error('Erreur lors de la mise à jour de la tâche :', err);
-      toast.error(err.message || 'Impossible de mettre à jour la tâche.');
+      console.error('Erreur lors de la soumission:', err);
+      toast.error(err.message || 'Une erreur est survenue');
     } finally {
-      setIsUpdatingTask(false);
+      setIsSubmitting(false);
     }
   };
 
-  const resetForm = () => {
-    setNewTaskTitle('');
-    setNewTaskDescription('');
-    setNewTaskStatus('A_FAIRE')
-    setNewTaskPriority('FAIBLE');
-    setNewTaskDueDate('');
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
     
-    if (editingTask) {
-      onCancelEditing();
+    if (errors[name]) {
+      setErrors(prev => ({
+        ...prev,
+        [name]: ''
+      }));
     }
   };
+
+  const handleCancel = () => {
+    router.push('/Tasks');
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin text-[#101060]" />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex justify-center items-center min-h-screen p-4 bg-gray-50">
-      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 w-full max-w-2xl">
-        <h2 className="text-2xl font-bold text-black mb-6 flex items-center">
-          {editingTask ? (
+    <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 max-w-2xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 flex items-center">
+          {taskId ? (
             <>
-              <Edit className="mr-3 text-[#B08C0A]" /> Modifier la tâche
+              <Edit className="mr-3 text-[#101060]" />
+              Modifier la tâche
             </>
           ) : (
             <>
-              <PlusCircle className="mr-3 text-[#101060]" /> Créer une nouvelle tâche
+              <PlusCircle className="mr-3 text-[#101060]" />
+              Créer une nouvelle tâche
             </>
           )}
         </h2>
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="lg:col-span-2">
-              <label htmlFor="taskTitle" className="block text-sm font-semibold text-black mb-2">
-                Titre de la tâche
-              </label>
-              <input
-                id="taskTitle"
-                type="text"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                placeholder="Ex: Préparer la présentation client"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-black"
-                required
-              />
-            </div>
-            
-            <div className="lg:col-span-2">
-              <label htmlFor="taskDescription" className="block text-sm font-semibold text-black mb-2">
-                Description (optionnel)
-              </label>
-              <textarea
-                id="taskDescription"
-                value={newTaskDescription}
-                onChange={(e) => setNewTaskDescription(e.target.value)}
-                placeholder="Détails, notes ou sous-tâches..."
-                rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-black"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="taskPriority" className="block text-sm font-semibold text-black mb-2">
-                Status
-              </label>
-              <select
-                id="taskStatus"
-                value={newTaskStatus}
-                onChange={(e) => setNewTaskStatus(e.target.value as 'A_FAIRE' | 'EN_COURS' | 'EN_ATTENTE' )}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-black"
-              >
-                <option value="A_FAIRE">A faire</option>
-                <option value="EN_COURS">En cours</option>
-                <option value="EN_ATTENTE" >Terminé</option>
-              </select>
-            </div>
-            
-            <div>
-              <label htmlFor="taskDueDate" className="block text-sm font-semibold text-black mb-2">
-                Date d'échéance
-              </label>
-              <input
-                id="taskDueDate"
-                type="date"
-                value={newTaskDueDate}
-                onChange={(e) => setNewTaskDueDate(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-black"
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="taskPriority" className="block text-sm font-semibold text-black mb-2">
-                Priorité
-              </label>
-              <select
-                id="taskPriority"
-                value={newTaskPriority}
-                onChange={(e) => setNewTaskPriority(e.target.value as 'FAIBLE' | 'MOYENNE' | 'ELEVEE')}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-black"
-              >
-                <option value="FAIBLE">Basse</option>
-                <option value="MOYENNE">Moyenne</option>
-                <option value="ELEVEE">Haute</option>
-              </select>
-            </div>
-          </div>
-          
-          <div className="flex gap-4">
-            <button
-              type="submit"
-              disabled={isCreatingTask || isUpdatingTask}
-              className="flex-1 flex justify-center items-center py-3 px-6 bg-gradient-to-r from-[#101060] to-[#1a1580] text-white font-semibold rounded-lg hover:from-[#0c0c50] hover:to-[#151470] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#101060] transition-all duration-200 disabled:opacity-70 disabled:cursor-not-alFAIBLEed shadow-lg"
-            >
-              {(isCreatingTask || isUpdatingTask) ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-5 w-5" />
-                  <span className="text-white">{editingTask ? 'Mise à jour...' : 'Création...'}</span>
-                </>
-              ) : (
-                <span className="text-white">{editingTask ? 'Mettre à jour' : 'Créer la tâche'}</span>
-              )}
-            </button>
-            
-            {editingTask && (
-              <button
-                type="button"
-                onClick={onCancelEditing}
-                className="flex justify-center items-center py-3 px-6 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-all duration-200"
-              >
-                <XCircle className="mr-2 h-5 w-5" />
-                <span className="text-black">Annuler</span>
-              </button>
-            )}
-          </div>
-        </form>
+        <button
+          onClick={handleCancel}
+          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          title="Fermer"
+        >
+          <X className="w-5 h-5 text-gray-500" />
+        </button>
       </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="lg:col-span-2">
+          <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
+            Titre de la tâche *
+          </label>
+          <input
+            type="text"
+            id="title"
+            name="title"
+            value={formData.title}
+            onChange={handleInputChange}
+            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all ${
+              errors.title ? 'border-red-500' : 'border-gray-300'
+            } text-gray-800 placeholder-gray-400`}
+            placeholder="Ex: Préparer la présentation client"
+            disabled={isSubmitting}
+            required
+          />
+          {errors.title && (
+            <p className="mt-2 text-sm text-red-600 flex items-center">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              {errors.title}
+            </p>
+          )}
+        </div>
+
+        <div className="lg:col-span-2">
+          <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+            <FileText className="inline w-4 h-4 mr-1" />
+            Description
+          </label>
+          <textarea
+            id="description"
+            name="description"
+            value={formData.description || ''}
+            onChange={handleInputChange}
+            rows={4}
+            className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all resize-none border-gray-300 text-gray-800 placeholder-gray-400"
+            placeholder="Détails, notes ou sous-tâches..."
+            disabled={isSubmitting}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-2">
+              <Flag className="inline w-4 h-4 mr-1" />
+              Statut
+            </label>
+            <select
+              id="status"
+              name="status"
+              value={formData.status}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-gray-800"
+              disabled={isSubmitting}
+            >
+              <option value="A_FAIRE">À faire</option>
+              <option value="EN_COURS">En cours</option>
+              <option value="EN_ATTENTE">En attente</option>
+              <option value="TERMINE">Terminé</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="priority" className="block text-sm font-medium text-gray-700 mb-2">
+              <AlertCircle className="inline w-4 h-4 mr-1" />
+              Priorité
+            </label>
+            <select
+              id="priority"
+              name="priority"
+              value={formData.priority}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-gray-800"
+              disabled={isSubmitting}
+            >
+              <option value="FAIBLE">Basse</option>
+              <option value="MOYENNE">Moyenne</option>
+              <option value="ELEVEE">Haute</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="dueDate" className="block text-sm font-medium text-gray-700 mb-2">
+              <Calendar className="inline w-4 h-4 mr-1" />
+              Échéance
+            </label>
+            <input
+              id="dueDate"
+              name="dueDate"
+              type="date"
+              value={formData.dueDate || ''}
+              onChange={handleInputChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#101060] focus:border-transparent transition-all text-gray-800"
+              disabled={isSubmitting}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3 pt-4">
+          <button
+            type="submit"
+            disabled={isSubmitting || isLoading}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-[#101060] text-white rounded-lg hover:bg-[#0c0c50] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>{taskId ? 'Mise à jour...' : 'Création...'}</span>
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5" />
+                <span>{taskId ? 'Mettre à jour' : 'Créer la tâche'}</span>
+              </>
+            )}
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={isSubmitting}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all disabled:opacity-50"
+          >
+            <X className="w-5 h-5" />
+            <span>Annuler</span>
+          </button>
+        </div>
+      </form>
     </div>
+  );
+}
+
+export default function TaskFormPageWithSuspense() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-[#101060]" /></div>}>
+      <TaskFormPage />
+    </Suspense>
   );
 }
